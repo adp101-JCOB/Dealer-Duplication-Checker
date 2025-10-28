@@ -32,67 +32,58 @@ if potential_file and current_file:
     potential.columns = potential.columns.str.strip().str.lower()
     current.columns = current.columns.str.strip().str.lower()
 
-    # Detect likely email and company columns
-    potential_email_col = find_col(potential, ["email", "e-mail"])
-    current_email_col = find_col(current, ["email", "e-mail"])
-
-    potential_company_col = find_col(potential, ["company", "dealer", "shop", "store", "business"])
-    current_company_col = find_col(current, ["company", "dealer", "shop", "store", "business"])
-
-    # Optional: try to find helpful context columns for email personalization
-    contact_name_col = find_col(potential, ["contact", "owner", "manager", "name"])
-    city_col = find_col(potential, ["city", "town"])
+    # --- Detect key columns automatically ---
+    email_col = find_col(potential, ["email", "e-mail", "mail"])
+    company_col = find_col(potential, ["company", "dealer", "shop", "store", "business"])
+    website_col = find_col(potential, ["website", "url", "web"])
+    contact_name_col = find_col(potential, ["contact", "name", "manager", "owner", "rep"])
+    contact_title_col = find_col(potential, ["title", "position", "role"])
+    phone_col = find_col(potential, ["phone", "telephone", "mobile"])
+    linkedin_col = find_col(potential, ["linkedin", "linkdn", "li"])
     state_col = find_col(potential, ["state", "province", "region"])
-    website_col = find_col(potential, ["website", "url"])
+    country_col = find_col(potential, ["country", "nation"])
 
-    if not potential_email_col or not current_email_col:
-        st.error("Could not find an email column in one or both files.")
+    # --- Duplicate detection (optional) ---
+    if not email_col:
+        st.error("Could not find an email column in the potential dealers file.")
     else:
-        # Extract email domains
-        potential["domain"] = potential[potential_email_col].fillna("").str.lower().str.split("@").str[-1]
-        current["domain"] = current[current_email_col].fillna("").str.lower().str.split("@").str[-1]
+        # Extract email domain for comparison
+        potential["domain"] = potential[email_col].fillna("").str.lower().str.split("@").str[-1]
+        current["domain"] = current[find_col(current, ["email", "e-mail"])].fillna("").str.lower().str.split("@").str[-1]
 
-        # Flag duplicates
         potential["duplicate_domain"] = potential["domain"].isin(current["domain"])
-
-        # Optional: flag company duplicates
-        if potential_company_col and current_company_col:
-            potential["duplicate_company"] = potential[potential_company_col].str.lower().isin(
-                current[current_company_col].str.lower()
-            )
-        else:
-            potential["duplicate_company"] = False
-
-        # Combine both checks
-        potential["duplicate_flag"] = potential["duplicate_domain"] | potential["duplicate_company"]
+        potential["duplicate_flag"] = potential["duplicate_domain"]
 
         st.success(f"Found {potential['duplicate_flag'].sum()} potential duplicates.")
 
-        # --- 👇 NEW: columns to keep for your ChatGPT email agent ---
-        selected_columns = [
-            potential_company_col,
-            contact_name_col,
-            potential_email_col,
-            city_col,
-            state_col,
-            website_col,
-            "domain",
-            "duplicate_domain",
-            "duplicate_company",
-            "duplicate_flag"
-        ]
+        # --- Create cleaned export for ChatGPT agent ---
+        output_cols = {
+            company_col: "Shop Name",
+            website_col: "Website",
+            email_col: "Email",
+            contact_name_col: "Contact Name",
+            contact_title_col: "Contact Title",
+            phone_col: "Main Phone",
+            linkedin_col: "LinkedIn",
+            state_col: "State",
+            country_col: "Country"
+        }
 
-        # Remove missing ones (None values)
-        selected_columns = [c for c in selected_columns if c in potential.columns]
+        # Build cleaned dataframe with consistent headers
+        cleaned = pd.DataFrame()
 
-        cleaned = potential[selected_columns]
+        for original, new_name in output_cols.items():
+            if original in potential.columns:
+                cleaned[new_name] = potential[original]
+            else:
+                cleaned[new_name] = ""  # blank if not found
 
-        # Show results table in Streamlit
-        st.dataframe(cleaned[cleaned["duplicate_flag"]])
+        # Show final cleaned data table
+        st.dataframe(cleaned)
 
-        # Downloadable CSV (only selected columns)
+        # --- Download cleaned, formatted CSV ---
         csv = cleaned.to_csv(index=False).encode("utf-8")
-        st.download_button("Download Results", csv, "Cleaned_Dealers.csv", "text/csv")
+        st.download_button("Download Cleaned Dealers CSV", csv, "Cleaned_Dealers.csv", "text/csv")
 
 else:
     st.info("Please upload both dealer files to start.")

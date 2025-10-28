@@ -32,56 +32,46 @@ if potential_file and current_file:
     potential.columns = potential.columns.str.strip().str.lower()
     current.columns = current.columns.str.strip().str.lower()
 
-    # --- Detect key columns automatically ---
-    email_col = find_col(potential, ["email", "e-mail", "mail"])
-    company_col = find_col(potential, ["company", "dealer", "shop", "store", "business"])
-    website_col = find_col(potential, ["website", "url", "web"])
-    contact_name_col = find_col(potential, ["contact", "name", "manager", "owner", "rep"])
-    contact_title_col = find_col(potential, ["title", "position", "role"])
-    phone_col = find_col(potential, ["phone", "telephone", "mobile"])
-    linkedin_col = find_col(potential, ["linkedin", "linkdn", "li"])
-    state_col = find_col(potential, ["state", "province", "region"])
-    country_col = find_col(potential, ["country", "nation"])
+    # --- Detect columns in "potential" dataset ---
+    col_map = {
+        "Shop Name": find_col(potential, ["shop", "dealer", "store", "company", "business", "name"]),
+        "Website": find_col(potential, ["website", "url", "web"]),
+        "Email": find_col(potential, ["email", "e-mail", "mail"]),
+        "Contact Name": find_col(potential, ["contact", "owner", "manager", "person", "rep"]),
+        "Contact Title": find_col(potential, ["title", "position", "role"]),
+        "Main Phone": find_col(potential, ["phone", "telephone", "mobile"]),
+        "State": find_col(potential, ["state", "province", "region"]),
+        "Country": find_col(potential, ["country", "nation"]),
+    }
 
     # --- Duplicate detection (optional) ---
+    email_col = col_map["Email"]
     if not email_col:
         st.error("Could not find an email column in the potential dealers file.")
     else:
-        # Extract email domain for comparison
+        # Extract email domains to compare
         potential["domain"] = potential[email_col].fillna("").str.lower().str.split("@").str[-1]
-        current["domain"] = current[find_col(current, ["email", "e-mail"])].fillna("").str.lower().str.split("@").str[-1]
-
-        potential["duplicate_domain"] = potential["domain"].isin(current["domain"])
-        potential["duplicate_flag"] = potential["duplicate_domain"]
+        current_email_col = find_col(current, ["email", "e-mail"])
+        if current_email_col:
+            current["domain"] = current[current_email_col].fillna("").str.lower().str.split("@").str[-1]
+            potential["duplicate_flag"] = potential["domain"].isin(current["domain"])
+        else:
+            potential["duplicate_flag"] = False
 
         st.success(f"Found {potential['duplicate_flag'].sum()} potential duplicates.")
 
-        # --- Create cleaned export for ChatGPT agent ---
-        output_cols = {
-            company_col: "Shop Name",
-            website_col: "Website",
-            email_col: "Email",
-            contact_name_col: "Contact Name",
-            contact_title_col: "Contact Title",
-            phone_col: "Main Phone",
-            linkedin_col: "LinkedIn",
-            state_col: "State",
-            country_col: "Country"
-        }
-
-        # Build cleaned dataframe with consistent headers
+        # --- Build the cleaned export ---
         cleaned = pd.DataFrame()
 
-        for original, new_name in output_cols.items():
-            if original in potential.columns:
-                cleaned[new_name] = potential[original]
+        # Always include all 8 requested columns (fill blanks if not found)
+        for nice_name, original_col in col_map.items():
+            if original_col and original_col in potential.columns:
+                cleaned[nice_name] = potential[original_col]
             else:
-                cleaned[new_name] = ""  # blank if not found
+                cleaned[nice_name] = ""  # blank if not found
 
-        # Show final cleaned data table
+        # --- Display and download ---
         st.dataframe(cleaned)
-
-        # --- Download cleaned, formatted CSV ---
         csv = cleaned.to_csv(index=False).encode("utf-8")
         st.download_button("Download Cleaned Dealers CSV", csv, "Cleaned_Dealers.csv", "text/csv")
 
